@@ -2,17 +2,12 @@
 require "sqlite3"
 require 'open-uri'
 require 'rest_client'
-require 'nokogiri'
 require 'fileutils'
 require 'tumblr_client'
 OSXTAGS=(/darwin/ =~ RUBY_PLATFORM) != nil
 #Getting keys, and tokens from a file to prevent this file from acciedentally displaying things it should not... if I chose to post it anywhere.
 f=File.open("keys.json")
-keys=""
-f.each{|line|
-	keys=keys+line
-}
-keys=JSON.parse(keys)
+keys = JSON.parse(File.open("keys.json").read)
 G_URL_SHORT_KEY=keys['gShort']
 TUMBLR_KEY=keys['tKey']
 TUMBLR_SECRET=keys['tSecret']
@@ -26,6 +21,7 @@ Tumblr.configure do |config|
 end
 def createDB(database_location="test.db")
 	db = SQLite3::Database.new database_location
+		puts "Executing createDB"
 =begin
 		Table files
 		key:
@@ -58,9 +54,11 @@ class FileDB
 		@fl=folderLocation
 		@tc=Tumblr::Client.new(:client => :httpclient)
 	end
+	
 	def FileDB.finalize(id)
 		@db.close()
 	end
+	
 	def addFile(fileLoc, webLoc)
 		#This is a function that adds stuff to the Database based on the URL provided
 		gShort=shortenURL(webLoc)
@@ -69,9 +67,11 @@ class FileDB
 		@db.execute("insert into files (location, gID) VALUES (\"#{fileLoc}\",\"#{gShort}\");")
 		return gShort
 	end
+	
 	def findByFile(loc)
 		@db.execute("select* from files where location=\"#{loc}\"")	
 	end
+	
 	def addTumblrTags(fileLoc)
 		gID=@db.execute("select * from files where location=\"#{fileLoc}\"")[0][1]
 		loc=JSON.parse(lengthenURL("http://goo.gl/#{gID}"))['longUrl']
@@ -91,6 +91,7 @@ class FileDB
 			#puts "Weird ... there was an issue trying to get tags for: #{fileLoc}"
 			
 	end
+	
 	def getTumblr(loc)
 		#We are trusting the user that this is a tumblr page ...
 		if(loc.split("/")[2]=="goo.gl")
@@ -121,7 +122,9 @@ class FileDB
 	#rescue NoMethodError
 		#puts "ERROR: It's likely that this particular link is not a link to a photo post: #{loc}"
 	end
+	
 	protected
+	
 	def getFileFromURL(webLoc,folderLoc)
 =begin
 	Note: this utility will download into a directory based on where this file is located (aka if you wanted to downlaod something 	to the next directory up you would have to use "/../"
@@ -133,17 +136,21 @@ class FileDB
 			file << open(webLoc).read
 		end
 	end 
+	
 	def shortenURL(webLoc)
 		RestClient.post 'https://www.googleapis.com/urlshortener/v1/url?key='+G_URL_SHORT_KEY, {'longUrl' => webLoc, }.to_json, :content_type => :json, :accept => :json
 	end
+	
 	def lengthenURL(gShort)
 		RestClient.get "https://www.googleapis.com/urlshortener/v1/url?key=#{G_URL_SHORT_KEY}&shortUrl=#{gShort}",  :content_type => :json, :accept => :json
 		
 	end
+	
 	def getTumblrDomain(loc)
 		tURL=loc.split("/")
 		tDomain=tURL[2]
 	end
+	
 	def getTumblrPost(loc)
 		tURL=loc.split("/")
 		tPost=tURL[-1]
@@ -153,15 +160,15 @@ class FileDB
 		return tPost
 	end
 end
-def test(line, db)
-	return db.getTumblr(line)==false	
-rescue Errno::ECONNRESET => e
-	puts "This post had an ssl error #{line} ... Should be nothing\n"
-rescue Exception => e
-	puts "This post caused an error: #{line} This error to be precice:\n\n#{e.class}: #{e}\n"
-	return true
-end
 if __FILE__==$0
+	def test(line, db)
+		return db.getTumblr(line)==false	
+	rescue Errno::ECONNRESET => e
+		puts "This post had an ssl error #{line} ... Should be nothing\n"
+	rescue Exception => e
+		puts "This post caused an error: #{line} This error to be precice:\n\n#{e.class}: #{e}\n"
+		return true
+	end
 	if(!File.exists? "test.db")
 		db=FileDB.new(createDB,"..")
 	else
