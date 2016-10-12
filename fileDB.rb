@@ -1,14 +1,14 @@
 #!/usr/bin/env ruby
 require 'sqlite3'
 require 'open-uri'
-require 'rest_client'
+require 'rest-client'
 require 'fileutils'
+require 'json'
 OSXTAGS=(/darwin/ =~ RUBY_PLATFORM) != nil
 #Getting keys, and tokens from a file to prevent this file from acciedentally displaying things it should not... if I chose to post it anywhere.
 KEYS = JSON.parse(File.open("keys.json").read)
 def createDB(database_location="test.db")
 	db = SQLite3::Database.new database_location
-		puts "Executing createDB"
 =begin
 		Table files
 		key:
@@ -19,13 +19,13 @@ def createDB(database_location="test.db")
 		gID:
 			The ID provided by google URL shortining
 =end
-	
-	
+
+
 =begin
 	Table Tags
-	gID: 
+	gID:
 		the ID provided by google URL shortining
-	Tag: 
+	Tag:
 		A tag provided by the original page
 =end
 	#Setting up the Tables
@@ -42,7 +42,10 @@ class FileDB
 		@db=SQLite3::Database.open database_location
 		@fl=folderLocation
 	end
-	def FileDB.finalize(id)
+	def self.finalize(id)
+		proc {@db.close()}
+	end
+	def close()
 		@db.close()
 	end
 	def addFile(fileLoc, webLoc)
@@ -53,17 +56,15 @@ class FileDB
 		return gShort
 	end
 	def findByFile(loc)
-		@db.execute("select* from files where location=\"#{loc}\"")	
-	end	
+		@db.execute("select* from files where location=\"#{loc}\"")
+	end
 	def addTags(tags, gID, fileLoc=nil)
 		tags.each{|tag|
-			#puts "SQL Executing: insert into tags (gID, tag) VALUES (\"#{gID}\",\"#{tag}\");"
 			@db.execute("insert into tags (gID, tag) VALUES (\"#{gID}\",\"#{tag}\");")
 			if(!fileLoc.nil?&&OSXTAGS)
-				#puts "\tExecuting: tag -a \"#{tag}\" \"#{fileLoc}\""
 				`tag -a \"#{tag}\" \"#{fileLoc}\"`
 			end
-		}	
+		}
 	end
 	def readTags(gID)
 		#Returns all tags associated with the gID
@@ -88,7 +89,7 @@ class FileDB
 	def getLocation(gID)
 		output=Array.new
 		@db.execute("select location from files where gID=\"#{gID}\"").each{|loc|
-			output.push(loc[0])	
+			output.push(loc[0])
 		}
 	end
 	def getgID(location)
@@ -108,10 +109,10 @@ class FileDB
 		end
 	end
 	def removeDuplicateTags()
-		db.execute("delete from tags where rowid not in(select min(rowid) from tags group by gID,tag)")
+		@db.execute("delete from tags where rowid not in(select min(rowid) from tags group by gID,tag)")
 	end
 	def removeDuplicateFiles()
-		db.execute("delete from files where rowid not in(select min(rowid) from files group by location)")
+		@db.execute("delete from files where rowid not in(select min(rowid) from files group by location)")
 	end
 	def shortenURL(webLoc, catchRate=0)
 		JSON.parse(RestClient.post('https://www.googleapis.com/urlshortener/v1/url?key='+KEYS['gShort'], {'longUrl' => webLoc, }.to_json, :content_type => :json, :accept => :json))['id']
@@ -128,7 +129,13 @@ class FileDB
 	def lengthenURL(gShort)
 		JSON.parse(RestClient.get("https://www.googleapis.com/urlshortener/v1/url?key=#{KEYS['gShort']}&shortUrl=#{gShort}",  :content_type => :json, :accept => :json))['longUrl']
 	end
-	protected	
+	#protected
+	def linkInDatabase?(webLoc)
+		return !(@db.execute("select * from files where gID=\"#{shortenURL(webLoc).split("/")[-1]}\";")[0].nil?)
+	end
+	def fileInDatabase?(fileLoc)
+		return !(@db.execute("select * from files where location=\"#{file}\"")[0].nil?)
+	end
 	def getFileFromURL(webLoc,folderLoc)
 =begin
 	Note: this utility will download into a directory based on where this file is located (aka if you wanted to downlaod something 	to the next directory up you would have to use "/../"
@@ -139,7 +146,7 @@ class FileDB
 		open(folderLoc+webLoc.split("/")[-1], 'wb') do |file|
 			file << open(webLoc).read
 		end
-	end 
+	end
 end
 if __FILE__==$PROGRAM_NAME
 	require 'optparse'#Going to leave it up to whomever is writing the code if they want to have the user have the ability to change the options...
@@ -152,7 +159,7 @@ if __FILE__==$PROGRAM_NAME
 			returner="../"+returner
 		end
 		return returner
-	end	
+	end
 	options = {}
 	options[:db]="test.db"
 	options[:fl]="./"
@@ -161,16 +168,15 @@ if __FILE__==$PROGRAM_NAME
 		opt.on("--setDB Database_Location","Set the location of the database"){ |db| options[:db]=db}
 		opt.on("--setFolder Folder_Location","Set the Folder Location of the Database (Usually ./)"){ |fl| options[:fl]=fl}
 		opt.on("-f File_Location", "--file File_Location","The File that you are currently getting/setting information for"){ |file| options[:file]=file}
-		opt.on("-t Tag1,Tag2,...,TagN", "--tags Tag1,Tag2,...,TagN","The Tag you are either setting or getting information on"){ |tag| 
+		opt.on("-t Tag1,Tag2,...,TagN", "--tags Tag1,Tag2,...,TagN","The Tag you are either setting or getting information on"){ |tag|
 			options[:tag]=tag.split(',') }
 		opt.on_tail("--getgID","Get the Google shortened url for the file") { options[:gID]=true}
-		opt.on_tail("--ReadTags","Read the tags associated with the filn"){options[:readTags]=true}
+		opt.on_tail("--ReadTags","Read the tags associated with the file"){options[:readTags]=true}
 		opt.on_tail("--AddTags","Add a tag to the File"){options[:addTags]=true}
 		opt.on_tail("--GetFilesFromTags","Get all files associated with any of the tags"){options[:getFilesFromTags]=true}
 		opt.on("")
 		#opt.on("-v", "--[no-]verbose", "Run verbosely"){|v| options[:v]=v}# Needed an example of a boolean switch...
 	end.parse!
-	puts options
 	db=FileDB.new(options[:db],options[:fl])
 	if(!options[:readTags].nil?)
 		puts db.readTags(db.getgID(fileDBConverter(options[:file])))
@@ -179,6 +185,7 @@ if __FILE__==$PROGRAM_NAME
 	elsif(!options[:addTags].nil?)
 		puts db.addTags(options[:tag],db.getgID(fileDBConverter(options[:file])))
 	elsif(!options[:getFilesFromTags].nil?)
-		db.getgIDsFromTags(options[:tag]).each{|gID| db.getLocation(gID).each{|loc| puts loc}}
+		puts db.getgIDsFromTags(options[:tag]).each{|gID| db.getLocation(gID).each{|loc| puts loc}}
 	end
+	db.close
 end
