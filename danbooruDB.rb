@@ -61,7 +61,7 @@ class FileDB
 			currentPage=danAPIHandler("http://danbooru.donmai.us/posts",{"page"=>"#{page}", "tags"=>tag, "utf8"=>"%E2%9C%93"})
 			posts=[*posts, *currentPage]
 			page+=1
-			break if currentPage.empty?
+			break if currentPage.nil? ||currentPage.empty?
 		end
 		if !posts.empty?
 			posts.each do |x|
@@ -152,8 +152,10 @@ class FileDB
 		end
 		#puts url
 		return JSON.parse(RestClient.get(URI::encode(url),:content_type => :json, :accept => :json))
-		#rescue RestClient::ResourceNotFound
-			#puts "404, Could not find #{resource}"
+		rescue RestClient::ResourceNotFound
+			puts "404, Could not find #{resource}"
+		rescue RestClient::Gone
+			puts "401, could not find #{resource}"
 	end
 end
 if __FILE__==$0
