@@ -1,0 +1,11 @@
+{
+	"gShort":"Google Cloud Key",
+	"tKey":"Tumblr Key",
+	"tSecret":"Tumblr Secret",
+	"tOToken":"Tumblr OAUTH token",
+	"tOSecret":"tumblr OAUTH secret",
+	"danbooru.donmai.us":{
+		"login":"Danbooru username",
+		"api_key":"Danborou API Key"
+	}
+}
