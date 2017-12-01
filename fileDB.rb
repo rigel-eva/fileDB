@@ -118,7 +118,7 @@ class FileDB
 		JSON.parse(RestClient.post('https://www.googleapis.com/urlshortener/v1/url?key='+KEYS['gShort'], {'longUrl' => webLoc, }.to_json, :content_type => :json, :accept => :json))['id']
 	rescue RestClient::Forbidden => e
 		if(catchRate<CATCHLIMIT)
-			sleepTime=Random.rand(20)
+			sleepTime=3600+10*Random.rand(10)
 			puts "There was a 403 error when trying to shorten this URL: #{webLoc}, catchRate#{catchRate}, Sleep time:#{sleepTime}"
 			sleep sleepTime
 			shortenURL(webLoc,catchRate+1)
@@ -132,6 +132,11 @@ class FileDB
 	#protected
 	def linkInDatabase?(webLoc)
 		return !(@db.execute("select * from files where gID=\"#{shortenURL(webLoc).split("/")[-1]}\";")[0].nil?)
+	rescue SQLite3::BusyException
+		sleepTime=3600+10*Random.rand(10)
+		puts "linkInDatabase: SQLite3: The Database is busy?!"
+		sleep sleepTime
+		return linkInDatabase(webLoc)
 	end
 	def fileInDatabase?(fileLoc)
 		return !(@db.execute("select * from files where location=\"#{file}\"")[0].nil?)

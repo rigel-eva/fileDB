@@ -1,4 +1,8 @@
 #!/usr/bin/env ruby
+#TODO:
+# Add a way to find files with nothing in them, and refetch or remove them from the database
+# Add a maximum page search length to getDanPostsFromTag
+# Adjust the getDanPostsFromTag to stop searching not when it finds one file thats the same, but some ammount that should probably be in the neighborhood around ... 20 ... or about an entire page
 load "fileDB.rb"
 require 'tempfile'
 #API keys are needed ... however, not here. due to the weird wibbily wobbly nature of Boorus
@@ -51,7 +55,13 @@ class FileDB
 				return false
 			end
 	end
-	def getDanPostsFromTag(tag, page=0, retryCount=10, posts={})
+
+	def getDanPostsFromTag(tag, stopOnDupe=true,page=0, retryCount=10, posts={})
+		#tag: the tag that we want to search
+		#stopOnDupe: Whether we stop if we come across a duplicate fileLoc
+		#page: The page that we start our scan on
+		#retryCount: How often we retry fetching the tag information
+		#posts: ¯\_(ツ)_/¯
 		t=Array.new
 		i=0
 		#currentPage=JSON.parse(RestClient.get("http://danbooru.donmai.us/posts.json?page=#{page}&tags=#{tag}&utf8=%E2%9C%93"))
@@ -61,11 +71,11 @@ class FileDB
 			currentPage=danAPIHandler("http://danbooru.donmai.us/posts",{"page"=>"#{page}", "tags"=>tag, "utf8"=>"%E2%9C%93"})
 			posts=[*posts, *currentPage]
 			page+=1
-			break if currentPage.nil? ||currentPage.empty?
+			break if currentPage.nil? ||currentPage.empty?||page>100
 		end
 		if !posts.empty?
 			posts.each do |x|
-				if linkInDatabase?("http://danbooru.donmai.us/posts/#{x['id']}")#Is this link in our database?
+				if stopOnDupe&&linkInDatabase?("http://danbooru.donmai.us/posts/#{x['id']}")#Is this link in our database?
 					break #Oh it is? cool. we are done here folks.
 				end
 				t[i]=Thread.new{
@@ -81,11 +91,22 @@ class FileDB
 			if(retryCount>0)
 				puts "getDanPostsFromTag: There are currently too many connections going on ... going to rest for a few, and go back online #{tag}, #{page}"
 				sleep 3600+10*Random.rand(10)
-				return getDanPostsFromTag(tag, page ,retryCount-1, posts)
+				return getDanPostsFromTag(tag, stopOnDupe, page ,retryCount-1, posts)
 			else
 				puts "getDanPostsFromTag: Right, we are going to have to try this one later ... #{tag}, #{page}"
 				return false
 			end
+	rescue RestClient::InternalServerError
+	rescue RestClient::BadGateway
+		if(retryCount>0)
+			puts "getDanPostFromTag: Something Bad happened with the servers ... going to wait for a few moments and try again #{tag}, #{page}"
+			puts tag;
+			sleep 3600+10*Random.rand(10)
+			return getDanPostsFromTag(tag, stopOnDupe, page, retryCount-1, posts)
+		else
+			puts "getDanPostsFromTag: Right, we are going to have to try this one later ... #{tag}, #{page}"
+			return false
+		end
 	end
 	def getDanTags(fileLoc, retryCount=5)
 		gID=@db.execute("select * from files where location=\"#{fileLoc}\"")[0][1]
@@ -202,7 +223,7 @@ if __FILE__==$0
 	f3.each_line do |line|
 		#t[i]=Thread.new{
 			puts line.tr(" \n\t", '')
-			db.getDanPostsFromTag(line.tr(" \n\t", ''))
+			db.getDanPostsFromTag(line.tr(" \n\t", ''), true)
 		#}
 	end
 	t.each{|thread| thread.join}
